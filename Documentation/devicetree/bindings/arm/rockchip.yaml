@@ -347,6 +347,11 @@ properties:
           - const: firefly,rk3568-roc-pc
           - const: rockchip,rk3568
 
+      - description: FMX1 Pro board
+        items:
+          - const: rockchip,fmx1_pro
+          - const: rockchip,rk3399
+
       - description: Forlinx FET3588-C SoM
         items:
           - enum:
