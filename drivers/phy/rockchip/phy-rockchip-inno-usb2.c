@@ -163,6 +163,9 @@ struct rockchip_usb2phy_port_cfg {
 	struct usb2phy_reg	utmi_id;
 	struct usb2phy_reg	utmi_ls;
 	struct usb2phy_reg	utmi_hstdet;
+	struct usb2phy_reg	vbus_det_en;
+	struct usb2phy_reg	iddig_output;
+	struct usb2phy_reg	iddig_en;
 };
 
 /**
@@ -662,13 +665,73 @@ static int rockchip_usb2phy_exit(struct phy *phy)
 	return 0;
 }
 
+/*
+ * Ported from the Rockchip 4.4 vendor driver: the PHY has to know whether the
+ * controller wants host or device role.  In device/OTG mode the VBUS detect
+ * function has to stay enabled (and VBUS must not be driven); in host mode it
+ * is the other way round.  Mainline never implemented set_mode, so the
+ * phy_set_mode(PHY_MODE_USB_DEVICE) call from dwc3 was a no-op.
+ */
+static int rockchip_usb2phy_set_mode(struct phy *phy, enum phy_mode mode,
+				     int submode)
+{
+	struct rockchip_usb2phy_port *rport = phy_get_drvdata(phy);
+	struct rockchip_usb2phy *rphy = dev_get_drvdata(phy->dev.parent);
+	bool vbus_det_en;
+
+	if (rport->port_id != USB2PHY_PORT_OTG ||
+	    !rport->port_cfg->vbus_det_en.offset)
+		return 0;
+
+	switch (mode) {
+	case PHY_MODE_USB_DEVICE:
+	case PHY_MODE_USB_OTG:
+		vbus_det_en = true;
+		break;
+	case PHY_MODE_USB_HOST:
+	case PHY_MODE_INVALID:
+		vbus_det_en = false;
+		break;
+	default:
+		return 0;
+	}
+
+	return property_enable(rphy->grf, &rport->port_cfg->vbus_det_en,
+			       vbus_det_en);
+}
+
 static const struct phy_ops rockchip_usb2phy_ops = {
 	.init		= rockchip_usb2phy_init,
 	.exit		= rockchip_usb2phy_exit,
 	.power_on	= rockchip_usb2phy_power_on,
 	.power_off	= rockchip_usb2phy_power_off,
+	.set_mode	= rockchip_usb2phy_set_mode,
 	.owner		= THIS_MODULE,
 };
+
+/*
+ * Autonomous power-off from the OTG state machine or charger detection.
+ *
+ * A peripheral-only port shouldn't be power-gated behind the controller's
+ * back.  If the gadget (re)binds while the PHY is suspended, the
+ * controller's ep0 setup fails and the gadget stays dead even when a VBUS
+ * session appears later.  Keep the phy active on peripheral ports for
+ * correct connection detection.
+ */
+static void rockchip_usb2phy_sm_power_off(struct rockchip_usb2phy_port *rport)
+{
+	/*
+	 * This board's OTG port has no usable VBUS/ID detection wired to the
+	 * SoC, so the state machine keeps deciding that no session is present
+	 * (or that a DCP charger is attached) and suspends the PHY underneath
+	 * the controller.  Keep the PHY powered for every non-host mode so
+	 * gadget mode (HID/MSD/UAC/NCM) survives.
+	 */
+	if (rport->mode != USB_DR_MODE_HOST)
+		return;
+
+	rockchip_usb2phy_power_off(rport->phy);
+}
 
 static void rockchip_usb2phy_otg_sm_work(struct work_struct *work)
 {
@@ -693,7 +756,7 @@ static void rockchip_usb2phy_otg_sm_work(struct work_struct *work)
 	case OTG_STATE_UNDEFINED:
 		rport->state = OTG_STATE_B_IDLE;
 		if (!vbus_attach)
-			rockchip_usb2phy_power_off(rport->phy);
+			rockchip_usb2phy_sm_power_off(rport);
 		fallthrough;
 	case OTG_STATE_B_IDLE:
 		if (extcon_get_state(rphy->edev, EXTCON_USB_HOST) > 0) {
@@ -719,7 +782,7 @@ static void rockchip_usb2phy_otg_sm_work(struct work_struct *work)
 					break;
 				case POWER_SUPPLY_TYPE_USB_DCP:
 					dev_dbg(&rport->phy->dev, "dcp cable is connected\n");
-					rockchip_usb2phy_power_off(rport->phy);
+					rockchip_usb2phy_sm_power_off(rport);
 					notify_charger = true;
 					sch_work = true;
 					cable = EXTCON_CHG_USB_DCP;
@@ -765,7 +828,7 @@ static void rockchip_usb2phy_otg_sm_work(struct work_struct *work)
 			rphy->chg_type = POWER_SUPPLY_TYPE_UNKNOWN;
 			rport->state = OTG_STATE_B_IDLE;
 			delay = 0;
-			rockchip_usb2phy_power_off(rport->phy);
+			rockchip_usb2phy_sm_power_off(rport);
 		}
 		sch_work = true;
 		break;
@@ -773,7 +836,7 @@ static void rockchip_usb2phy_otg_sm_work(struct work_struct *work)
 		if (extcon_get_state(rphy->edev, EXTCON_USB_HOST) == 0) {
 			dev_dbg(&rport->phy->dev, "usb otg host disconnect\n");
 			rport->state = OTG_STATE_B_IDLE;
-			rockchip_usb2phy_power_off(rport->phy);
+			rockchip_usb2phy_sm_power_off(rport);
 		}
 		break;
 	default:
@@ -838,7 +901,7 @@ static void rockchip_chg_detect_work(struct work_struct *work)
 	switch (rphy->chg_state) {
 	case USB_CHG_STATE_UNDEFINED:
 		if (!rport->suspended && !vbus_attach)
-			rockchip_usb2phy_power_off(rport->phy);
+			rockchip_usb2phy_sm_power_off(rport);
 		/* put the controller in non-driving mode */
 		if (!vbus_attach)
 			property_enable(rphy->grf, &rphy->phy_cfg->chg_det.opmode, false);
@@ -1309,6 +1372,39 @@ static int rockchip_usb2phy_otg_port_init(struct rockchip_usb2phy *rphy,
 	mutex_init(&rport->mutex);
 
 	rport->mode = of_usb_get_dr_mode_by_phy(child_np, -1);
+
+	/*
+	 * A Type-C port has no OTG ID pin, so the GRF has to take over the
+	 * PHY's ID input.  Otherwise the PHY decides the port direction from
+	 * a floating ID and does not pull up D+ in device mode.
+	 * Values match the Rockchip 6.12 BSP.  In OTG mode leave the real ID
+	 * pin alone -- forcing the GRF value there breaks the D+ pull-up.
+	 */
+	if (rport->port_cfg->iddig_en.offset) {
+		switch (rport->mode) {
+		case USB_DR_MODE_HOST:
+			property_enable(rphy->grf, &rport->port_cfg->iddig_output,
+					false);
+			property_enable(rphy->grf, &rport->port_cfg->iddig_en,
+					true);
+			break;
+		case USB_DR_MODE_PERIPHERAL:
+			property_enable(rphy->grf, &rport->port_cfg->iddig_output,
+					true);
+			property_enable(rphy->grf, &rport->port_cfg->iddig_en,
+					true);
+			break;
+		case USB_DR_MODE_OTG:
+			property_enable(rphy->grf, &rport->port_cfg->iddig_output,
+					false);
+			property_enable(rphy->grf, &rport->port_cfg->iddig_en,
+					false);
+			break;
+		default:
+			break;
+		}
+	}
+
 	if (rport->mode == USB_DR_MODE_HOST ||
 	    rport->mode == USB_DR_MODE_UNKNOWN) {
 		ret = 0;
@@ -1501,6 +1597,27 @@ next_child:
 
 put_child:
 	of_node_put(child_np);
+	return ret;
+}
+
+/*
+ * Disable the pre-emphasize in EOP and chirp state.  Without this the PHY
+ * mis-triggers its disconnect detection and the high-speed handshake can
+ * fail (the device then only shows up as a full-speed one, or not at all).
+ * Same sequence as the Rockchip 4.4 vendor driver.
+ */
+static int rk3399_usb2phy_tuning(struct rockchip_usb2phy *rphy)
+{
+	int ret = 0;
+
+	if (rphy->phy_cfg->reg == 0xe450) {
+		ret |= regmap_write(rphy->grf, 0x4480, GENMASK(17, 16) | 0x0);
+		ret |= regmap_write(rphy->grf, 0x44b4, GENMASK(17, 16) | 0x0);
+	} else {
+		ret |= regmap_write(rphy->grf, 0x4500, GENMASK(17, 16) | 0x0);
+		ret |= regmap_write(rphy->grf, 0x4534, GENMASK(17, 16) | 0x0);
+	}
+
 	return ret;
 }
 
@@ -1885,10 +2002,17 @@ static const struct rockchip_usb2phy_cfg rk3399_phy_cfgs[] = {
 	{
 		.reg		= 0xe450,
 		.num_ports	= 2,
+		.phy_tuning	= rk3399_usb2phy_tuning,
 		.clkout_ctl	= { 0xe450, 4, 4, 1, 0 },
 		.port_cfgs	= {
 			[USB2PHY_PORT_OTG] = {
-				.phy_sus	= { 0xe454, 1, 0, 2, 1 },
+				/*
+				 * 9-bit field, same values as the Rockchip 4.4 vendor
+				 * driver: 0x052 = active, 0x1d1 = suspend.  The mainline
+				 * value only wrote bits[1:0], leaving the bias/enable
+				 * bits (bit4/bit6) untouched.
+				 */
+				.phy_sus	= { 0xe454, 8, 0, 0x052, 0x1d1 },
 				.bvalid_det_en	= { 0xe3c0, 3, 3, 0, 1 },
 				.bvalid_det_st	= { 0xe3e0, 3, 3, 0, 1 },
 				.bvalid_det_clr	= { 0xe3d0, 3, 3, 0, 1 },
@@ -1901,6 +2025,9 @@ static const struct rockchip_usb2phy_cfg rk3399_phy_cfgs[] = {
 				.utmi_avalid	= { 0xe2ac, 7, 7, 0, 1 },
 				.utmi_bvalid	= { 0xe2ac, 12, 12, 0, 1 },
 				.utmi_id	= { 0xe2ac, 8, 8, 0, 1 },
+				.vbus_det_en	= { 0x449c, 15, 15, 1, 0 },
+				.iddig_output	= { 0xe454, 10, 10, 0, 1 },
+				.iddig_en	= { 0xe454, 9, 9, 0, 1 },
 			},
 			[USB2PHY_PORT_HOST] = {
 				.phy_sus	= { 0xe458, 1, 0, 0x2, 0x1 },
@@ -1927,6 +2054,7 @@ static const struct rockchip_usb2phy_cfg rk3399_phy_cfgs[] = {
 	{
 		.reg		= 0xe460,
 		.num_ports	= 2,
+		.phy_tuning	= rk3399_usb2phy_tuning,
 		.clkout_ctl	= { 0xe460, 4, 4, 1, 0 },
 		.port_cfgs	= {
 			[USB2PHY_PORT_OTG] = {
