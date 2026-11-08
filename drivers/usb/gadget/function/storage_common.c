@@ -244,12 +244,23 @@ int fsg_lun_open(struct fsg_lun *curlun, const char *filename)
 	min_sectors = 1;
 	if (curlun->cdrom) {
 		min_sectors = 300;	/* Smallest track is 300 frames */
-		if (num_sectors >= 256*60*75) {
-			num_sectors = 256*60*75 - 1;
-			LINFO(curlun, "file too big: %s\n", filename);
-			LINFO(curlun, "using only first %d blocks\n",
-					(int) num_sectors);
-		}
+		/*
+		 * DVD/BD emulation (ported from Igor Kononenko's fms series).
+		 *
+		 * Stock mainline caps a CD-ROM LUN at 256*60*75-1 blocks of
+		 * 2048 bytes (~2.19 GiB), which is the largest address that
+		 * fits in CD MSF (minute:second:frame) addressing, and then
+		 * silently serves only that prefix of a bigger image.
+		 *
+		 * Optical media are actually addressed by the host with
+		 * READ(10)/READ(12) LBAs, so bigger images can be served
+		 * fine -- the media type / capacity are advertised through
+		 * GET CONFIGURATION (DVD-ROM / BD-ROM profiles) and the
+		 * ISO9660 volume descriptor.  Only cap at the 32-bit LBA
+		 * limit that READ CAPACITY can express.
+		 */
+		if (num_sectors >= 0xfffffffeULL)
+			num_sectors = 0xfffffffeULL;
 	}
 	if (num_sectors < min_sectors) {
 		LINFO(curlun, "file too small: %s\n", filename);

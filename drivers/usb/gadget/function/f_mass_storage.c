@@ -1275,6 +1275,175 @@ static int do_read_toc(struct fsg_common *common, struct fsg_buffhd *bh)
 	}
 }
 
+/*-------------------------------------------------------------------------*/
+/*
+ * DVD/BD emulation for the CD-ROM LUN.
+ *
+ * Ported from Igor Kononenko's "fms" series (2021), which is what PiKVM
+ * uses to emulate DVD images bigger than a CD.  Hosts (Windows, ESXi,
+ * firmware) issue GET CONFIGURATION to learn whether the drive is a
+ * CD-ROM, DVD-ROM or BD-ROM; without it a >2.19 GiB image looks like a
+ * broken CD-ROM.
+ */
+#define CDF_PROFILE_CD_ROM	0x0008
+#define CDF_PROFILE_DVD_ROM	0x0010
+#define CDF_PROFILE_BD_ROM	0x0040
+
+/* Capacity in 2048-byte frames/blocks of each media class */
+#define CDF_CD_MAX_FRAMES	(60ULL * 60 * 75)	/* 60 min CD   */
+#define CDF_DVD_MAX_FRAMES	(2295104ULL)		/* 4.7 GB SL   */
+#define CDF_DVDDL_MAX_FRAMES	(4173824ULL)		/* 8.5 GB DL   */
+#define CDF_BD_MAX_FRAMES	(12219392ULL)		/* 25 GB       */
+#define CDF_BDDL_MAX_FRAMES	(24438784ULL)		/* 50 GB       */
+
+#define CDF_FT_HEADER		4	/* code(2) + vpc(1) + add_len(1) */
+#define CDF_FT_VPC(cur, per, ver) \
+	((u8)(((cur) ? 0x01 : 0) | ((per) ? 0x02 : 0) | (((ver) & 0xf) << 2)))
+
+#define CDF_RT_FULL		0x00
+#define CDF_RT_CURRENT		0x01
+#define CDF_RT_SPECIFIED_SFN	0x02
+
+struct cdf_feature {
+	u16	code;
+	u8	vpc;
+	u8	add_len;
+	u8	data[12];
+};
+
+/* Guess the emulated media class from the backing file size */
+static u16 cdf_guess_profile(struct fsg_lun *curlun)
+{
+	u64 frames = (u64)curlun->num_sectors;
+
+	if (frames <= CDF_CD_MAX_FRAMES)
+		return CDF_PROFILE_CD_ROM;
+	if (frames <= CDF_DVD_MAX_FRAMES)
+		return CDF_PROFILE_DVD_ROM;
+	if (frames <= CDF_DVDDL_MAX_FRAMES)
+		return CDF_PROFILE_DVD_ROM;
+	if (frames <= CDF_BD_MAX_FRAMES)
+		return CDF_PROFILE_BD_ROM;
+	if (frames <= CDF_BDDL_MAX_FRAMES)
+		return CDF_PROFILE_BD_ROM;
+
+	return CDF_PROFILE_BD_ROM;
+}
+
+static int cdf_add_feature(u8 *buf, int off, const struct cdf_feature *f)
+{
+	put_unaligned_be16(f->code, &buf[off]);
+	buf[off + 2] = f->vpc;
+	buf[off + 3] = f->add_len;
+	if (f->add_len)
+		memcpy(&buf[off + CDF_FT_HEADER], f->data, f->add_len);
+	return off + CDF_FT_HEADER + f->add_len;
+}
+
+static void cdf_fill_feature(struct cdf_feature *f, u16 code, u8 vpc,
+			     u8 add_len, const u8 *data)
+{
+	f->code = code;
+	f->vpc = vpc;
+	f->add_len = add_len;
+	memset(f->data, 0, sizeof(f->data));
+	if (add_len && data)
+		memcpy(f->data, data, add_len);
+}
+
+/* MMC-6 6.5 GET CONFIGURATION (0x46) */
+static int do_get_configuration(struct fsg_common *common,
+				struct fsg_buffhd *bh)
+{
+	struct fsg_lun *curlun = common->curlun;
+	u8 *buf = (u8 *)bh->buf;
+	struct cdf_feature feats[8];
+	u8 plist[12];
+	u8 core[8]	= { 0x00, 0x00, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00 };
+	u8 morphing[4]	= { 0x02, 0x00, 0x00, 0x00 };
+	u8 removable[4]	= { 0x91, 0x00, 0x00, 0x00 };
+	u8 rndread[8]	= { 0x00, 0x00, 0x08, 0x00, 0x00, 0x10, 0x01, 0x00 };
+	u8 dvdread[4]	= { 0x01, 0x00, 0x03, 0x00 };
+	u8 rtstream[4]	= { 0x1f, 0x00, 0x00, 0x00 };
+	u16 profile;
+	int rt = common->cmnd[1] & 0x03;
+	u16 sfn = get_unaligned_be16(&common->cmnd[2]);
+	int i, len, off = 8;
+
+	if (!curlun || !curlun->cdrom) {
+		if (curlun)
+			curlun->sense_data = SS_INVALID_COMMAND;
+		return -EINVAL;
+	}
+	if (rt > CDF_RT_SPECIFIED_SFN) {
+		curlun->sense_data = SS_INVALID_FIELD_IN_CDB;
+		return -EINVAL;
+	}
+
+	profile = cdf_guess_profile(curlun);
+
+	/* Profile list: preferred first */
+	put_unaligned_be16(CDF_PROFILE_DVD_ROM, &plist[0]);
+	plist[2] = (profile == CDF_PROFILE_DVD_ROM) ? 0x01 : 0x00;
+	plist[3] = 0x00;
+	put_unaligned_be16(CDF_PROFILE_BD_ROM, &plist[4]);
+	plist[6] = (profile == CDF_PROFILE_BD_ROM) ? 0x01 : 0x00;
+	plist[7] = 0x00;
+	put_unaligned_be16(CDF_PROFILE_CD_ROM, &plist[8]);
+	plist[10] = (profile == CDF_PROFILE_CD_ROM) ? 0x01 : 0x00;
+	plist[11] = 0x00;
+
+	cdf_fill_feature(&feats[0], 0x0000, CDF_FT_VPC(1, 1, 0), 12, plist);
+	cdf_fill_feature(&feats[1], 0x0001, CDF_FT_VPC(1, 1, 2), 8, core);
+	cdf_fill_feature(&feats[2], 0x0002, CDF_FT_VPC(1, 1, 1), 4, morphing);
+	cdf_fill_feature(&feats[3], 0x0003, CDF_FT_VPC(1, 1, 2), 4, removable);
+	cdf_fill_feature(&feats[4], 0x0010, CDF_FT_VPC(1, 0, 0), 8, rndread);
+	cdf_fill_feature(&feats[5], 0x001d, CDF_FT_VPC(1, 0, 0), 0, NULL);
+	cdf_fill_feature(&feats[6], 0x001f, CDF_FT_VPC(1, 1, 2), 4, dvdread);
+	cdf_fill_feature(&feats[7], 0x0107, CDF_FT_VPC(1, 0, 5), 4, rtstream);
+
+	for (i = 0; i < ARRAY_SIZE(feats); i++) {
+		if (rt == CDF_RT_SPECIFIED_SFN) {
+			if (feats[i].code != sfn)
+				continue;
+		} else if (feats[i].code < sfn) {
+			continue;
+		}
+		off = cdf_add_feature(buf, off, &feats[i]);
+		if (rt == CDF_RT_SPECIFIED_SFN)
+			break;
+	}
+
+	len = off;
+	memset(buf, 0, 8);
+	put_unaligned_be32(len - 4, &buf[0]);	/* data length */
+	put_unaligned_be16(profile, &buf[6]);	/* current profile */
+
+	LDBG(curlun, "GET CONFIGURATION: profile=%04x, %d bytes\n",
+	     profile, len);
+	return len;
+}
+
+/* MMC-6 6.24 READ DISC INFORMATION (0x51) */
+static int do_read_disc_information(struct fsg_common *common,
+				    struct fsg_buffhd *bh)
+{
+	struct fsg_lun *curlun = common->curlun;
+	u8 *buf = (u8 *)bh->buf;
+
+	memset(buf, 0, 34);
+	put_unaligned_be16(32, &buf[0]);	/* data length */
+	buf[3] = 0x02;				/* status: complete */
+	buf[4] = 0x01;				/* first track number */
+	buf[5] = 0x01;				/* number of sessions(LSB) */
+	buf[6] = 0x01;				/* first track in last session */
+	buf[7] = 0x01;				/* last track in last session */
+	put_unaligned_be32((u32)curlun->num_sectors, &buf[16]);
+	buf[24] = 0x00;				/* disc type */
+
+	return 34;
+}
+
 static int do_mode_sense(struct fsg_common *common, struct fsg_buffhd *bh)
 {
 	struct fsg_lun	*curlun = common->curlun;
@@ -2021,6 +2190,31 @@ static int do_scsi_command(struct fsg_common *common)
 				      "READ TOC");
 		if (reply == 0)
 			reply = do_read_toc(common, bh);
+		break;
+
+	case GET_CONFIGURATION:
+		if (!common->curlun || !common->curlun->cdrom)
+			goto unknown_cmnd;
+		common->data_size_from_cmnd =
+			get_unaligned_be16(&common->cmnd[7]);
+		reply = check_command(common, 10, DATA_DIR_TO_HOST,
+				      (1<<1) | (1<<2) | (1<<3) |
+				      (1<<7) | (1<<8), 1,
+				      "GET CONFIGURATION");
+		if (reply == 0)
+			reply = do_get_configuration(common, bh);
+		break;
+
+	case READ_DISC_INFORMATION:
+		if (!common->curlun || !common->curlun->cdrom)
+			goto unknown_cmnd;
+		common->data_size_from_cmnd =
+			get_unaligned_be16(&common->cmnd[7]);
+		reply = check_command(common, 10, DATA_DIR_TO_HOST,
+				      (1<<1) | (1<<7) | (1<<8), 1,
+				      "READ DISC INFORMATION");
+		if (reply == 0)
+			reply = do_read_disc_information(common, bh);
 		break;
 
 	case READ_FORMAT_CAPACITIES:
