@@ -14,7 +14,7 @@ on:
       build_modules:
         description: Also build and package loadable kernel modules
         required: false
-        default: false
+        default: true
         type: boolean
   push:
     branches:
@@ -33,7 +33,9 @@ env:
   ARCH: arm64
   CROSS_COMPILE: aarch64-linux-gnu-
   DEFCONFIG: ${{ inputs.defconfig || 'fmx1_defconfig' }}
-  BUILD_MODULES: ${{ inputs.build_modules || 'false' }}
+  # Default to true for non-dispatch runs (e.g. push to dev). For a manual run,
+  # honour the boolean input, including an explicit "false".
+  BUILD_MODULES: ${{ github.event.inputs.build_modules == 'false' && 'false' || 'true' }}
 
 jobs:
   build:
