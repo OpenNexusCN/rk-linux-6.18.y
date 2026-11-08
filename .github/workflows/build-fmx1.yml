@@ -1,0 +1,131 @@
+name: Build fmx1 kernel and DTB
+
+on:
+  workflow_dispatch:
+    inputs:
+      defconfig:
+        description: Kernel defconfig to use
+        required: true
+        default: fmx1_defconfig
+        type: choice
+        options:
+          - fmx1_defconfig
+          - defconfig
+      build_modules:
+        description: Also build and package loadable kernel modules
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/build-fmx1.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fmx1-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARCH: arm64
+  CROSS_COMPILE: aarch64-linux-gnu-
+  DEFCONFIG: ${{ inputs.defconfig || 'fmx1_defconfig' }}
+  BUILD_MODULES: ${{ inputs.build_modules || 'false' }}
+
+jobs:
+  build:
+    name: Build Image + fmx1 DTBs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            build-essential bc bison flex libssl-dev libelf-dev \
+            kmod cpio rsync xz-utils
+          "${CROSS_COMPILE}gcc" --version | head -1
+          make --version | head -1
+
+      - name: Configure kernel
+        run: make "$DEFCONFIG"
+
+      - name: Build kernel Image
+        run: make -j"$(nproc)" Image
+
+      - name: Build fmx1 device trees
+        run: |
+          set -euo pipefail
+          make -j"$(nproc)" \
+            rockchip/rk3399-fmx1-pro.dtb \
+            rockchip/rk3399-fmx1-pro-b.dtb \
+            rockchip/rk3399-fmx1-pro-otg.dtb
+
+      - name: Build kernel modules
+        if: env.BUILD_MODULES == 'true'
+        run: make -j"$(nproc)" modules
+
+      - name: Package artifacts
+        run: |
+          set -euo pipefail
+          version="$(make -s kernelrelease)"
+          echo "KERNELRELEASE=${version}" >> "$GITHUB_ENV"
+
+          out="$PWD/out"
+          mkdir -p "$out"
+
+          cp -v arch/arm64/boot/Image "$out/Image-${version}"
+          for dtb in rk3399-fmx1-pro rk3399-fmx1-pro-b rk3399-fmx1-pro-otg; do
+            cp -v "arch/arm64/boot/dts/rockchip/${dtb}.dtb" "$out/"
+          done
+          cp -v .config "$out/config-${version}"
+          cp -v System.map "$out/System.map-${version}"
+          if [ -f Module.symvers ]; then
+            cp -v Module.symvers "$out/Module.symvers-${version}"
+          fi
+
+          if [ "$BUILD_MODULES" = "true" ]; then
+            make INSTALL_MOD_PATH="$out/modules" modules_install
+            rm -f "$out/modules/lib/modules/${version}/build" \
+                  "$out/modules/lib/modules/${version}/source"
+            tar -C "$out/modules" -czf "$out/modules-${version}.tar.gz" lib/modules
+            rm -rf "$out/modules"
+          fi
+
+          (cd "$out" && \
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | \
+            sort | xargs sha256sum > SHA256SUMS)
+          ls -lh "$out"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fmx1-kernel-${{ github.sha }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          {
+            echo "### fmx1 build"
+            echo
+            echo "- Kernel release: \`${KERNELRELEASE}\`"
+            echo "- Defconfig: \`${DEFCONFIG}\`"
+            echo "- Modules built: \`${BUILD_MODULES}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
