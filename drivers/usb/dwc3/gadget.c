@@ -2843,13 +2843,17 @@ static int dwc3_gadget_pullup(struct usb_gadget *g, int is_on)
 	 * the run stop sequence, so avoid duplicate operations here.
 	 */
 	ret = pm_runtime_get_sync(dwc->dev);
-	if (!ret || ret < 0) {
+	if (ret < 0) {
 		pm_runtime_put(dwc->dev);
-		if (ret < 0)
-			pm_runtime_set_suspended(dwc->dev);
+		pm_runtime_set_suspended(dwc->dev);
 		return ret;
 	}
 
+	/*
+	 * Do not return early when the controller was already active (ret == 0)
+	 * or was just resumed (ret > 0): the run/stop sequence must be driven
+	 * from here unless it already matches @is_on (checked below).
+	 */
 	if (dwc->pullups_connected == is_on) {
 		pm_runtime_put(dwc->dev);
 		return 0;
