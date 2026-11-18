@@ -929,3 +929,5 @@
 &vopl_mmu {
 	status = "okay";
 };
+
+#include "rk3399-vpu.dtsi"

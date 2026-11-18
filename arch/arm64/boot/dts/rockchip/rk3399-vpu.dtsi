@@ -1,37 +1,21 @@
 /*
- * Copyright (c) 2021 Rockchip Electronics Co., Ltd.
+ * Rockchip BSP MPP (Media Process Platform) overlay for RK3399.
+ *
+ * The upstream hantro driver owns the whole combined VPU block at
+ * 0xff650000 and does not implement H.264/H.265 encoding. The BSP MPP
+ * driver exposes /dev/mpp_service and drives the VEPU2 encoder and
+ * VDPU2 decoder that live in the same block. Both drivers cannot be
+ * active at the same time, so the mainline vpu node is disabled here.
+ *
+ * Decoding through the independent VDEC block (rkvdec@ff660000) is not
+ * affected and stays enabled.
  */
 
 / {
-	rockchip_system_monitor: rockchip-system-monitor {
-		compatible = "rockchip,system-monitor";
-
-		rockchip,thermal-zone = "cpu-thermal";
-		status = "disabled";
-	};
-
-	sram: sram@ff8d0000 {
-		compatible = "mmio-sram";
-		reg = <0x0 0xff8d0000 0x0 0x20000>;
-	};
-
 	mpp_srv: mpp-srv {
 		compatible = "rockchip,mpp-service";
 		rockchip,taskqueue-count = <2>;
 		rockchip,resetgroup-count = <2>;
-		status = "disabled";
-	};
-
-	vpu: video-codec@ff650000 {
-		compatible = "rockchip,rk3399-vpu";
-		reg = <0x0 0xff650000 0x0 0x800>;
-		interrupts = <GIC_SPI 114 IRQ_TYPE_LEVEL_HIGH 0>,
-			     <GIC_SPI 113 IRQ_TYPE_LEVEL_HIGH 0>;
-		interrupt-names = "vepu", "vdpu";
-		clocks = <&cru ACLK_VCODEC>, <&cru HCLK_VCODEC>;
-		clock-names = "aclk", "hclk";
-		iommus = <&vpu_mmu>;
-		power-domains = <&power RK3399_PD_VCODEC>;
 		status = "disabled";
 	};
 
@@ -68,81 +52,9 @@
 		rockchip,resetgroup-node = <0>;
 		status = "disabled";
 	};
-
-	vpu_mmu: iommu@ff650800 {
-		compatible = "rockchip,iommu";
-		reg = <0x00 0xff650800 0x00 0x40>;
-		interrupts = <GIC_SPI 115 IRQ_TYPE_LEVEL_HIGH 0>;
-		clocks = <&cru ACLK_VCODEC>, <&cru HCLK_VCODEC>;
-		clock-names = "aclk", "iface";
-		power-domains = <&power RK3399_PD_VCODEC>;
-		#iommu-cells = <0>;
-		status = "disabled";
-	};
-
-	vdec: video-codec@ff660000 {
-		compatible = "rockchip,rk3399-vdec";
-		reg = <0x0 0xff660000 0x0 0x400>;
-		interrupts = <GIC_SPI 116 IRQ_TYPE_LEVEL_HIGH 0>;
-		clocks = <&cru ACLK_VDU>, <&cru HCLK_VDU>,
-			 <&cru SCLK_VDU_CA>, <&cru SCLK_VDU_CORE>;
-		clock-names = "axi", "ahb", "cabac", "core";
-		iommus = <&vdec_mmu>;
-		power-domains = <&power RK3399_PD_VDU>;
-		status = "disabled";
-	};
-
-	rkvdec: rkvdec@ff660000 {
-		compatible = "rockchip,rkv-decoder-rk3399";
-		reg = <0x00 0xff660000 0x00 0x400>;
-		reg-names = "regs", "link";
-		interrupts = <GIC_SPI 116 IRQ_TYPE_LEVEL_HIGH 0>;
-		interrupt-names = "irq_dec";
-		clocks = <&cru ACLK_VDU>, <&cru HCLK_VDU>,
-			 <&cru SCLK_VDU_CA>, <&cru SCLK_VDU_CORE>;
-		clock-names = "aclk_vcodec", "hclk_vcodec","clk_cabac",
-			      "clk_core";
-		resets = <&cru SRST_H_VDU>, <&cru SRST_A_VDU>,
-				 <&cru SRST_H_VDU_NOC>, <&cru SRST_A_VDU_NOC>,
-				 <&cru SRST_VDU_CA>, <&cru SRST_VDU_CORE>;
-		reset-names = "video_h", "video_a", "niu_h", "niu_a",
-			"video_cabac", "video_core";
-		iommus = <&vdec_mmu>;
-		rockchip,srv = <&mpp_srv>;
-		rockchip,taskqueue-node = <1>;
-		rockchip,resetgroup-node = <1>;
-		power-domains = <&power RK3399_PD_VDU>;
-		status = "disabled";
-	};
-
-	vdec_mmu: iommu@ff660480 {
-		compatible = "rockchip,iommu";
-		reg = <0x00 0xff660480 0x00 0x40>, <0x00 0xff6604c0 0x00 0x40>;
-		interrupts = <GIC_SPI 117 IRQ_TYPE_LEVEL_HIGH 0>;
-		clocks = <&cru ACLK_VDU>, <&cru HCLK_VDU>;
-		clock-names = "aclk", "iface";
-		power-domains = <&power RK3399_PD_VDU>;
-		#iommu-cells = <0>;
-		status = "disabled";
-	};
-
-	rga: rga@ff680000 {
-		compatible = "rockchip,rk3399-rga","rockchip,rga2";
-		reg = <0x0 0xff680000 0x0 0x10000>;
-		interrupts = <GIC_SPI 55 IRQ_TYPE_LEVEL_HIGH 0>;
-		clocks = <&cru ACLK_RGA>, <&cru HCLK_RGA>, <&cru SCLK_RGA_CORE>;
-		clock-names = "aclk", "hclk", "sclk";
-		resets = <&cru SRST_RGA_CORE>, <&cru SRST_A_RGA>, <&cru SRST_H_RGA>;
-		reset-names = "core", "axi", "ahb";
-		power-domains = <&power RK3399_PD_RGA>;
-	};
 };
 
 &mpp_srv {
-	status = "okay";
-};
-
-&vpu {
 	status = "okay";
 };
 
@@ -158,18 +70,7 @@
 	status = "okay";
 };
 
-&vdec {
-	status = "okay";
-};
-
-&rkvdec {
-	status = "okay";
-};
-
-&vdec_mmu {
-	status = "okay";
-};
-
-&rga {
-	status = "okay";
+/* Mainline hantro driver: no encoder support and conflicts with MPP. */
+&vpu {
+	status = "disabled";
 };
