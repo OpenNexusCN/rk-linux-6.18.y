@@ -21,6 +21,16 @@ on:
       - dev
     paths:
       - .github/workflows/build-fmx1.yml
+      - arch/arm64/configs/fmx1_defconfig
+      - arch/arm64/boot/dts/rockchip/rk3399*.dts
+      - arch/arm64/boot/dts/rockchip/rk3399*.dtsi
+      - drivers/iommu/rockchip-iommu.c
+      - drivers/media/platform/rockchip/mpp/**
+      - drivers/media/platform/rockchip/mpp_osal/**
+      - drivers/pmdomain/rockchip/**
+      - include/linux/rockchip/**
+      - include/soc/rockchip/**
+      - include/uapi/linux/rk-mpp.h
 
 permissions:
   contents: write
