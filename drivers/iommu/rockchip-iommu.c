@@ -1067,6 +1067,17 @@ int rockchip_iommu_disable(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(rockchip_iommu_disable);
 
+bool rockchip_iommu_is_enabled(struct device *dev)
+{
+	struct rk_iommu *iommu = rk_iommu_from_dev(dev);
+
+	if (!iommu)
+		return false;
+
+	return iommu->domain && iommu->domain != &rk_identity_domain;
+}
+EXPORT_SYMBOL_GPL(rockchip_iommu_is_enabled);
+
 int rockchip_iommu_force_reset(struct device *dev)
 {
 	struct rk_iommu *iommu;

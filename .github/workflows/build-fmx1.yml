@@ -28,6 +28,7 @@ on:
       - drivers/media/platform/rockchip/mpp/**
       - drivers/media/platform/rockchip/mpp_osal/**
       - drivers/media/platform/rockchip/iep/**
+      - drivers/rknpu/**
       - drivers/pmdomain/rockchip/**
       - include/linux/rockchip/**
       - include/soc/rockchip/**

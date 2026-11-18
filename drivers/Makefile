@@ -66,6 +66,7 @@ obj-y				+= iommu/
 
 # gpu/ comes after char for AGP vs DRM startup and after iommu
 obj-y				+= gpu/
+obj-$(CONFIG_ROCKCHIP_RKNPU)	+= rknpu/
 
 obj-$(CONFIG_CONNECTOR)		+= connector/
 

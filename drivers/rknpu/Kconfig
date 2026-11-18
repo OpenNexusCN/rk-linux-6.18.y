@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: GPL-2.0
+config ROCKCHIP_RKNPU
+	tristate "Rockchip RKNPU (vendor)"
+	depends on ARCH_ROCKCHIP || COMPILE_TEST
+	depends on DRM
+	depends on ROCKCHIP_IOMMU || COMPILE_TEST
+	select DMA_SHARED_BUFFER
+	help
+	  Rockchip vendor RKNPU driver for the neural processing units
+	  found on RK3568, RK3588 and similar SoCs.
+
+	  The driver registers a DRM render node that is used by the
+	  Rockchip librknnrt / RKNN Toolkit userspace stack. It is
+	  unrelated to the mainline Rocket accel driver.
+
+if ROCKCHIP_RKNPU
+
+config ROCKCHIP_RKNPU_DEBUG_FS
+	bool "RKNPU debugfs"
+	depends on DEBUG_FS
+	default y
+	help
+	  Enable debugfs to debug RKNPU usage.
+
+config ROCKCHIP_RKNPU_PROC_FS
+	bool "RKNPU procfs"
+	depends on PROC_FS
+	help
+	  Enable procfs to debug RKNPU usage.
+
+config ROCKCHIP_RKNPU_FENCE
+	bool "RKNPU fence"
+	depends on SYNC_FILE
+	help
+	  Enable dma-fence support for RKNPU.
+
+# Only the DRM GEM memory manager is available in this tree: the vendor
+# CMA dma-heap backend is not ported.
+config ROCKCHIP_RKNPU_DRM_GEM
+	bool "RKNPU DRM GEM memory manager"
+	depends on DRM
+	default y
+	help
+	  Use DRM GEM for RKNPU buffer objects and exports.
+
+endif
