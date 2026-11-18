@@ -27,6 +27,8 @@
 #include <linux/spinlock.h>
 #include <linux/string_choices.h>
 
+#include <soc/rockchip/rockchip_iommu.h>
+
 #include "iommu-pages.h"
 
 /** MMU register offsets */
@@ -975,6 +977,116 @@ out_disable_clocks:
 	clk_bulk_disable(iommu->num_clocks, iommu->clocks);
 	return ret;
 }
+
+/*
+ * Vendor hooks used by the Rockchip MPP codec driver. The mainline driver
+ * keeps DMA domains attached for the whole device lifetime, so these only
+ * (re)program the page table base and the IRQ mask registers; no domain
+ * switching is involved.
+ */
+void rockchip_iommu_mask_irq(struct device *dev)
+{
+	struct rk_iommu *iommu = rk_iommu_from_dev(dev);
+	int i;
+
+	if (!iommu)
+		return;
+
+	for (i = 0; i < iommu->num_mmu; i++)
+		rk_iommu_write(iommu->bases[i], RK_MMU_INT_MASK, 0);
+}
+EXPORT_SYMBOL_GPL(rockchip_iommu_mask_irq);
+
+void rockchip_iommu_unmask_irq(struct device *dev)
+{
+	struct rk_iommu *iommu = rk_iommu_from_dev(dev);
+	int i;
+
+	if (!iommu)
+		return;
+
+	for (i = 0; i < iommu->num_mmu; i++) {
+		/* Mappings may have changed while the fault was handled. */
+		rk_iommu_base_command(iommu->bases[i], RK_MMU_CMD_ZAP_CACHE);
+		rk_iommu_write(iommu->bases[i], RK_MMU_INT_MASK,
+			       RK_MMU_IRQ_MASK);
+	}
+}
+EXPORT_SYMBOL_GPL(rockchip_iommu_unmask_irq);
+
+static int rk_iommu_vendor_get(struct device *dev, struct rk_iommu **iommu)
+{
+	int ret;
+
+	*iommu = rk_iommu_from_dev(dev);
+	if (!*iommu)
+		return -ENODEV;
+
+	/* Nothing to program while detached from a real domain. */
+	if (!(*iommu)->domain || (*iommu)->domain == &rk_identity_domain)
+		return -ENODEV;
+
+	ret = pm_runtime_get_sync((*iommu)->dev);
+	if (ret < 0) {
+		pm_runtime_put_noidle((*iommu)->dev);
+		return ret;
+	}
+
+	return 0;
+}
+
+int rockchip_iommu_enable(struct device *dev)
+{
+	struct rk_iommu *iommu;
+	int ret;
+
+	ret = rk_iommu_vendor_get(dev, &iommu);
+	if (ret)
+		return ret;
+
+	ret = rk_iommu_enable(iommu);
+	pm_runtime_put(iommu->dev);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rockchip_iommu_enable);
+
+int rockchip_iommu_disable(struct device *dev)
+{
+	struct rk_iommu *iommu;
+	int ret;
+
+	ret = rk_iommu_vendor_get(dev, &iommu);
+	if (ret)
+		return ret;
+
+	rk_iommu_disable(iommu);
+	pm_runtime_put(iommu->dev);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rockchip_iommu_disable);
+
+int rockchip_iommu_force_reset(struct device *dev)
+{
+	struct rk_iommu *iommu;
+	int ret;
+
+	ret = rk_iommu_vendor_get(dev, &iommu);
+	if (ret)
+		return ret;
+
+	ret = rk_iommu_enable_stall(iommu);
+	if (!ret) {
+		ret = rk_iommu_force_reset(iommu);
+		rk_iommu_disable_stall(iommu);
+	}
+
+	pm_runtime_put(iommu->dev);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rockchip_iommu_force_reset);
 
 static int rk_iommu_identity_attach(struct iommu_domain *identity_domain,
 				    struct device *dev,

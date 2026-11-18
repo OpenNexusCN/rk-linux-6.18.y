@@ -454,6 +454,31 @@ static int rockchip_pmu_set_idle_request(struct rockchip_pm_domain *pd,
 	return 0;
 }
 
+/*
+ * Vendor API used by the Rockchip MPP codec driver to force a power domain
+ * into (or out of) idle around a hardware reset. Kept out of the generic
+ * genpd attach/detach path on purpose.
+ */
+int rockchip_pmu_idle_request(struct device *dev, bool idle)
+{
+	struct generic_pm_domain *genpd;
+	struct rockchip_pm_domain *pd;
+	int ret;
+
+	if (IS_ERR_OR_NULL(dev) || IS_ERR_OR_NULL(dev->pm_domain))
+		return -EINVAL;
+
+	genpd = pd_to_genpd(dev->pm_domain);
+	pd = to_rockchip_pd(genpd);
+
+	mutex_lock(&pd->pmu->mutex);
+	ret = rockchip_pmu_set_idle_request(pd, idle);
+	mutex_unlock(&pd->pmu->mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rockchip_pmu_idle_request);
+
 static int rockchip_pmu_save_qos(struct rockchip_pm_domain *pd)
 {
 	int i;
@@ -691,6 +716,70 @@ out:
 
 	return ret;
 }
+
+static struct rockchip_pm_domain *rockchip_pmu_dev_to_pd(struct device *dev)
+{
+	if (IS_ERR_OR_NULL(dev) || IS_ERR_OR_NULL(dev->pm_domain))
+		return NULL;
+
+	return to_rockchip_pd(pd_to_genpd(dev->pm_domain));
+}
+
+/*
+ * Vendor APIs used by the Rockchip MPP codec driver to force a power
+ * domain on/off and to save/restore its QoS registers around a reset.
+ */
+int rockchip_pmu_pd_on(struct device *dev)
+{
+	struct rockchip_pm_domain *pd = rockchip_pmu_dev_to_pd(dev);
+
+	return pd ? rockchip_pd_power(pd, true) : -EINVAL;
+}
+EXPORT_SYMBOL_GPL(rockchip_pmu_pd_on);
+
+int rockchip_pmu_pd_off(struct device *dev)
+{
+	struct rockchip_pm_domain *pd = rockchip_pmu_dev_to_pd(dev);
+
+	return pd ? rockchip_pd_power(pd, false) : -EINVAL;
+}
+EXPORT_SYMBOL_GPL(rockchip_pmu_pd_off);
+
+bool rockchip_pmu_pd_is_on(struct device *dev)
+{
+	struct rockchip_pm_domain *pd = rockchip_pmu_dev_to_pd(dev);
+
+	if (!pd)
+		return false;
+
+	guard(mutex)(&pd->pmu->mutex);
+	return rockchip_pmu_domain_is_on(pd);
+}
+EXPORT_SYMBOL_GPL(rockchip_pmu_pd_is_on);
+
+int rockchip_save_qos(struct device *dev)
+{
+	struct rockchip_pm_domain *pd = rockchip_pmu_dev_to_pd(dev);
+
+	if (!pd)
+		return -EINVAL;
+
+	guard(mutex)(&pd->pmu->mutex);
+	return rockchip_pmu_save_qos(pd);
+}
+EXPORT_SYMBOL_GPL(rockchip_save_qos);
+
+int rockchip_restore_qos(struct device *dev)
+{
+	struct rockchip_pm_domain *pd = rockchip_pmu_dev_to_pd(dev);
+
+	if (!pd)
+		return -EINVAL;
+
+	guard(mutex)(&pd->pmu->mutex);
+	return rockchip_pmu_restore_qos(pd);
+}
+EXPORT_SYMBOL_GPL(rockchip_restore_qos);
 
 static int rockchip_pd_regulator_disable(struct rockchip_pm_domain *pd)
 {

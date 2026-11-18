@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+menuconfig ROCKCHIP_MPP_SERVICE
+	tristate "Rockchip MPP service framework"
+	depends on ARCH_ROCKCHIP || COMPILE_TEST
+	depends on ROCKCHIP_IOMMU || COMPILE_TEST
+	select DMA_SHARED_BUFFER
+	help
+	  Rockchip Media Process Platform (MPP) service framework.
+
+	  This is the Rockchip BSP video codec driver that exposes
+	  /dev/mpp_service to the userspace MPP library
+	  (rockchip-linux/mpp). It drives the VPU/VEPU/VDPU/RKVENC/RKVDEC/
+	  JPEG/AV1 hardware blocks and is the only way to use the hardware
+	  H.264/H.265 encoder on SoCs such as RK3399 which have no mainline
+	  encoder driver.
+
+if ROCKCHIP_MPP_SERVICE
+
+config ROCKCHIP_MPP_PROC_FS
+	bool "MPP service procfs"
+	depends on PROC_FS
+	default y
+	help
+	  Expose /proc/mpp_service with device and session information.
+
+config ROCKCHIP_MPP_RKVDEC
+	bool "RKV decoder device driver"
+	help
+	  Rockchip RKVDEC combo decoder and HEVC decoder (RK3288, RK3328,
+	  RK3399, ...).
+
+config ROCKCHIP_MPP_RKVDEC2
+	bool "RKV decoder v2 device driver"
+	help
+	  Rockchip RKVDEC v2 decoder (RK3568, RK3588, RK3576, ...).
+
+config ROCKCHIP_MPP_RKVENC
+	bool "RKV encoder device driver"
+	help
+	  Rockchip RKVENC encoder (RK3328, RK3399, ...).
+
+config ROCKCHIP_MPP_RKVENC2
+	bool "RKV encoder v2 device driver"
+	help
+	  Rockchip RKVENC v2 encoder (RK3568, RK3588, RK3576, ...).
+
+config ROCKCHIP_MPP_VDPU1
+	bool "VPU decoder v1 device driver"
+	help
+	  Rockchip VPU decoder v1 (RK3288).
+
+config ROCKCHIP_MPP_VEPU1
+	bool "VPU encoder v1 device driver"
+	help
+	  Rockchip VPU encoder v1 (RK3288).
+
+config ROCKCHIP_MPP_VDPU2
+	bool "VPU decoder v2 device driver"
+	help
+	  Rockchip VPU decoder v2 (RK3328, RK3399, PX30, ...).
+
+config ROCKCHIP_MPP_VEPU2
+	bool "VPU encoder v2 device driver"
+	help
+	  Rockchip VPU encoder v2 (RK3328, RK3399, PX30, ...).
+
+config ROCKCHIP_MPP_IEP2
+	bool "IEP v2 device driver"
+	help
+	  Rockchip IEP v2 image enhancement processor.
+
+config ROCKCHIP_MPP_JPGDEC
+	bool "RKV JPEG decoder device driver"
+	help
+	  Rockchip RKV JPEG decoder (RK3568, RK3588, ...).
+
+config ROCKCHIP_MPP_JPGENC
+	bool "RKV JPEG encoder device driver"
+	help
+	  Rockchip RKV JPEG encoder (RK3568, RK3588, ...).
+
+config ROCKCHIP_MPP_AV1DEC
+	bool "AV1 decoder device driver"
+	help
+	  Rockchip AV1 decoder (RK3588).
+
+config ROCKCHIP_MPP_VDPP
+	bool "VDPP device driver"
+	help
+	  Rockchip video post processor.
+
+endif
