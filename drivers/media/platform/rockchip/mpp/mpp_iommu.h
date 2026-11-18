@@ -16,15 +16,12 @@
 #include <linux/interrupt.h>
 #include <linux/iova.h>
 
-enum iommu_dma_cookie_type {
-	IOMMU_DMA_IOVA_COOKIE,
-	IOMMU_DMA_MSI_COOKIE,
-};
-
-/* Keep in mind: member order must keep align with struct iommu_dma_cookie */
+/*
+ * Layout mirror of the private struct iommu_dma_cookie in
+ * drivers/iommu/dma-iommu.c. Since 6.18 it starts with the iova_domain
+ * itself (the old leading "type" field is gone).
+ */
 struct mpp_iommu_dma_cookie {
-	enum iommu_dma_cookie_type type;
-	/* Full allocator for IOMMU_DMA_IOVA_COOKIE */
 	struct iova_domain iovad;
 };
 
