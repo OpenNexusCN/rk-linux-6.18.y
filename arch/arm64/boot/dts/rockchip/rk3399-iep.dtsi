@@ -1,0 +1,28 @@
+/*
+ * Rockchip IEP v1 (Image Enhancement Processor) on RK3399.
+ *
+ * Provides deinterlacing, denoise, detail enhancement and scaling for
+ * YUV video through the /dev/iep misc device. The device shares its
+ * interrupt line with the IEP IOMMU at 0xff670800.
+ */
+
+/ {
+	iep: iep@ff670000 {
+		compatible = "rockchip,iep";
+		iommu_enabled = <1>;
+		iommus = <&iep_mmu>;
+		reg = <0x0 0xff670000 0x0 0x800>;
+		interrupts = <GIC_SPI 42 IRQ_TYPE_LEVEL_HIGH 0>;
+		clocks = <&cru ACLK_IEP>, <&cru HCLK_IEP>;
+		clock-names = "aclk_iep", "hclk_iep";
+		power-domains = <&power RK3399_PD_IEP>;
+		allocator = <1>;
+		version = <2>;
+		status = "okay";
+	};
+};
+
+&iep_mmu {
+	power-domains = <&power RK3399_PD_IEP>;
+	status = "okay";
+};

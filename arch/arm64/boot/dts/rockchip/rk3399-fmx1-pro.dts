@@ -931,3 +931,4 @@
 };
 
 #include "rk3399-vpu.dtsi"
+#include "rk3399-iep.dtsi"

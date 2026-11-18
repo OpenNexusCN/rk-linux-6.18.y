@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0
+config IEP
+	tristate "Rockchip IEP v1 image enhancement processor"
+	depends on ARCH_ROCKCHIP || COMPILE_TEST
+	depends on ROCKCHIP_IOMMU || COMPILE_TEST
+	select DMA_SHARED_BUFFER
+	help
+	  Rockchip Image Enhancement Processor (IEP) v1 found on RK3288,
+	  RK3399 and similar SoCs. It provides deinterlacing, denoise,
+	  detail enhancement and scaling for YUV video.
+
+	  This driver exposes a /dev/iep misc device; the userspace IEP
+	  library speaks a private ioctl ABI to it.

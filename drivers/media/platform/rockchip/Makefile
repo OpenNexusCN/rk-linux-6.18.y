@@ -5,3 +5,4 @@ obj-y += rkisp1/
 obj-y += rkvdec/
 obj-y += mpp/
 obj-$(CONFIG_ROCKCHIP_MPP_OSAL) += mpp_osal/
+obj-y += iep/
