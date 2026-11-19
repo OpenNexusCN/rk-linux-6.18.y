@@ -88,7 +88,8 @@ jobs:
             rockchip/rk3399-fmx1-pro.dtb \
             rockchip/rk3399-fmx1-pro-b.dtb \
             rockchip/rk3399-fmx1-pro-otg.dtb \
-            rockchip/rk3399-nanopc-t4-otg.dtb
+            rockchip/rk3399-nanopc-t4-otg.dtb \
+            rockchip/rk3399-bozz-sw799-otg.dtb
 
       - name: Build kernel modules
         if: env.BUILD_MODULES == 'true'
@@ -104,7 +105,7 @@ jobs:
           mkdir -p "$out"
 
           cp -v arch/arm64/boot/Image "$out/Image-${version}"
-          for dtb in rk3399-fmx1-pro rk3399-fmx1-pro-b rk3399-fmx1-pro-otg rk3399-nanopc-t4-otg; do
+          for dtb in rk3399-fmx1-pro rk3399-fmx1-pro-b rk3399-fmx1-pro-otg rk3399-nanopc-t4-otg rk3399-bozz-sw799-otg; do
             cp -v "arch/arm64/boot/dts/rockchip/${dtb}.dtb" "$out/"
           done
           cp -v .config "$out/config-${version}"

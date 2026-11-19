@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * RK3399 SW799 OTG variant for One-KVM.
+ *
+ * The board's J23 micro-USB connector is the OTG port: VBUS_TYPEC,
+ * TYPEC0_DM, TYPEC0_DP and TYPEC0_ID.  TYPEC0 is the DWC3_0 controller
+ * (usb@fe800000), which the stock DTS disables together with u2phy0_otg.
+ *
+ * Enable that port and use the same role-switch setup as the other RK3399
+ * One-KVM boards: keep dr_mode="otg" so the PHY leaves the real TYPEC0_ID
+ * pin alone (a forced IDDIG value breaks the D+ pull-up), and default the
+ * dwc3 role switch to peripheral.  maximum-speed is high-speed because J23
+ * only exposes the USB2 D+/D- pair.
+ *
+ * This exposes a peripheral UDC for One-KVM's HID (virtual keyboard and
+ * mouse), mass-storage (virtual CD-ROM) and UVC gadgets.  DWC3_1 stays as
+ * the stock host port.
+ */
+
+#include "rk3399-bozz-sw799.dts"
+
+&u2phy0_otg {
+	status = "okay";
+};
+
+&usbdrd3_0 {
+	status = "okay";
+};
+
+&usbdrd_dwc3_0 {
+	dr_mode = "otg";
+	usb-role-switch;
+	role-switch-default-mode = "peripheral";
+	maximum-speed = "high-speed";
+	status = "okay";
+};
