@@ -81,14 +81,13 @@ jobs:
       - name: Build kernel Image
         run: make -j"$(nproc)" Image
 
-      - name: Build Rockchip device trees
+      - name: Build Rockchip OTG device trees
         run: |
           set -euo pipefail
-          mapfile -t dtbs < <(sed -n \
-            's/^dtb-\$(CONFIG_ARCH_ROCKCHIP) += \(rk3399-.*\.dtb\)$/\1/p' \
-            arch/arm64/boot/dts/rockchip/Makefile)
-          echo "Building ${#dtbs[@]} RK3399 DTBs"
-          make -j"$(nproc)" "${dtbs[@]/#/rockchip/}"
+          cd arch/arm64/boot/dts/rockchip
+          mapfile -t dtbs < <(ls rk3399-*-otg.dtb)
+          echo "Building ${#dtbs[@]} RK3399 OTG DTBs"
+          make -C "$OLDPWD" -j"$(nproc)" "${dtbs[@]/#/rockchip/}"
 
       - name: Build kernel modules
         if: env.BUILD_MODULES == 'true'
@@ -104,7 +103,7 @@ jobs:
           mkdir -p "$out"
 
           cp -v arch/arm64/boot/Image "$out/Image-${version}"
-          cp -v arch/arm64/boot/dts/rockchip/rk3399-*.dtb "$out/"
+          cp -v arch/arm64/boot/dts/rockchip/rk3399-*-otg.dtb "$out/"
           cp -v .config "$out/config-${version}"
           cp -v System.map "$out/System.map-${version}"
           if [ -f Module.symvers ]; then
