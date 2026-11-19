@@ -51,7 +51,7 @@ env:
 
 jobs:
   build:
-    name: Build Image + fmx1 DTBs
+    name: Build Image + Rockchip DTBs
     runs-on: ubuntu-24.04
     timeout-minutes: 360
 
@@ -81,13 +81,14 @@ jobs:
       - name: Build kernel Image
         run: make -j"$(nproc)" Image
 
-      - name: Build fmx1 device trees
+      - name: Build Rockchip device trees
         run: |
           set -euo pipefail
           make -j"$(nproc)" \
             rockchip/rk3399-fmx1-pro.dtb \
             rockchip/rk3399-fmx1-pro-b.dtb \
-            rockchip/rk3399-fmx1-pro-otg.dtb
+            rockchip/rk3399-fmx1-pro-otg.dtb \
+            rockchip/rk3399-nanopc-t4-otg.dtb
 
       - name: Build kernel modules
         if: env.BUILD_MODULES == 'true'
@@ -103,7 +104,7 @@ jobs:
           mkdir -p "$out"
 
           cp -v arch/arm64/boot/Image "$out/Image-${version}"
-          for dtb in rk3399-fmx1-pro rk3399-fmx1-pro-b rk3399-fmx1-pro-otg; do
+          for dtb in rk3399-fmx1-pro rk3399-fmx1-pro-b rk3399-fmx1-pro-otg rk3399-nanopc-t4-otg; do
             cp -v "arch/arm64/boot/dts/rockchip/${dtb}.dtb" "$out/"
           done
           cp -v .config "$out/config-${version}"
@@ -144,13 +145,13 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "$tag" \
-            --notes "$(printf 'fmx1 kernel %s\n\n- commit: %s\n- defconfig: %s\n- modules: %s\n' \
+            --notes "$(printf 'Rockchip kernel %s\n\n- commit: %s\n- defconfig: %s\n- modules: %s\n' \
                          "$KERNELRELEASE" "$GITHUB_SHA" "$DEFCONFIG" "$BUILD_MODULES")"
 
       - name: Summary
         run: |
           {
-            echo "### fmx1 build"
+            echo "### Rockchip build"
             echo
             echo "- Kernel release: \`${KERNELRELEASE}\`"
             echo "- Defconfig: \`${DEFCONFIG}\`"

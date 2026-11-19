@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * FriendlyElec NanoPC-T4 OTG variant for One-KVM.
+ *
+ * The stock rk3399-nanopc-t4.dts keeps the USB-C dwc3_0 port in
+ * dr_mode="otg" without any role-switch wiring.  On 6.18 that does not
+ * register a peripheral UDC, so One-KVM cannot bind its HID
+ * (keyboard/mouse), mass-storage (virtual CD-ROM) or UVC gadgets.
+ *
+ * Keep dr_mode="otg": switching it to "peripheral" makes the RK3399 PHY
+ * force its GRF IDDIG override, which breaks the D+ pull-up.  Instead,
+ * default the dwc3 role switch to peripheral and describe the FUSB302
+ * Type-C port as a sink-only device.  TCPM then drives the role switch and
+ * presents Rd on CC, and the Type-C port enumerates as a USB device.
+ */
+
+#include "rk3399-nanopc-t4.dts"
+
+&usbdrd_dwc3_0 {
+	dr_mode = "otg";
+	usb-role-switch;
+	role-switch-default-mode = "peripheral";
+	maximum-speed = "high-speed";
+};
+
+&fusb0 {
+	connector {
+		compatible = "usb-c-connector";
+		label = "USB-C";
+		type = "receptacle";
+		data-role = "device";
+		power-role = "sink";
+		try-power-role = "sink";
+		op-sink-microwatt = <1000000>;
+		pd-disable;
+		typec-power-opmode = "default";
+		usb-role-switch = <&usbdrd_dwc3_0>;
+	};
+};
