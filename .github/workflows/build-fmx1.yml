@@ -84,10 +84,10 @@ jobs:
       - name: Build Rockchip OTG device trees
         run: |
           set -euo pipefail
-          cd arch/arm64/boot/dts/rockchip
-          mapfile -t dtbs < <(ls rk3399-*-otg.dtb)
+          mapfile -t dtbs < <(cd arch/arm64/boot/dts/rockchip && \
+            ls rk3399-*-otg.dts | sed 's/\.dts$/.dtb/')
           echo "Building ${#dtbs[@]} RK3399 OTG DTBs"
-          make -C "$OLDPWD" -j"$(nproc)" "${dtbs[@]/#/rockchip/}"
+          make -j"$(nproc)" "${dtbs[@]/#/rockchip/}"
 
       - name: Build kernel modules
         if: env.BUILD_MODULES == 'true'
