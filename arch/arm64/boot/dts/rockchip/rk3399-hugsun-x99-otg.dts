@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Hugsun-X99 OTG variant for One-KVM.
+ *
+ * The maskrom/flashing USB OTG port is routed to DWC3_0.
+ * Keep dr_mode="otg" so the RK3399 PHY leaves the real ID pin
+ * alone, default the dwc3 role switch to peripheral, and limit
+ * the port to high-speed (the flashing port is USB2).
+ */
+
+#include "rk3399-hugsun-x99.dts"
+
+&u2phy0_otg {
+	status = "okay";
+};
+
+&usbdrd3_0 {
+	status = "okay";
+};
+
+&usbdrd_dwc3_0 {
+	dr_mode = "otg";
+	usb-role-switch;
+	role-switch-default-mode = "peripheral";
+	maximum-speed = "high-speed";
+	status = "okay";
+};
+
+&fusb0 {
+	connector {
+		compatible = "usb-c-connector";
+		label = "USB-C";
+		type = "receptacle";
+		data-role = "device";
+		power-role = "sink";
+		try-power-role = "sink";
+		op-sink-microwatt = <1000000>;
+		pd-disable;
+		typec-power-opmode = "default";
+		usb-role-switch = <&usbdrd_dwc3_0>;
+	};
+};

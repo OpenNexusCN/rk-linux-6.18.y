@@ -84,12 +84,11 @@ jobs:
       - name: Build Rockchip device trees
         run: |
           set -euo pipefail
-          make -j"$(nproc)" \
-            rockchip/rk3399-fmx1-pro.dtb \
-            rockchip/rk3399-fmx1-pro-b.dtb \
-            rockchip/rk3399-fmx1-pro-otg.dtb \
-            rockchip/rk3399-nanopc-t4-otg.dtb \
-            rockchip/rk3399-bozz-sw799-otg.dtb
+          mapfile -t dtbs < <(sed -n \
+            's/^dtb-\$(CONFIG_ARCH_ROCKCHIP) += \(rk3399-.*\.dtb\)$/\1/p' \
+            arch/arm64/boot/dts/rockchip/Makefile)
+          echo "Building ${#dtbs[@]} RK3399 DTBs"
+          make -j"$(nproc)" "${dtbs[@]/#/rockchip/}"
 
       - name: Build kernel modules
         if: env.BUILD_MODULES == 'true'
@@ -105,9 +104,7 @@ jobs:
           mkdir -p "$out"
 
           cp -v arch/arm64/boot/Image "$out/Image-${version}"
-          for dtb in rk3399-fmx1-pro rk3399-fmx1-pro-b rk3399-fmx1-pro-otg rk3399-nanopc-t4-otg rk3399-bozz-sw799-otg; do
-            cp -v "arch/arm64/boot/dts/rockchip/${dtb}.dtb" "$out/"
-          done
+          cp -v arch/arm64/boot/dts/rockchip/rk3399-*.dtb "$out/"
           cp -v .config "$out/config-${version}"
           cp -v System.map "$out/System.map-${version}"
           if [ -f Module.symvers ]; then
