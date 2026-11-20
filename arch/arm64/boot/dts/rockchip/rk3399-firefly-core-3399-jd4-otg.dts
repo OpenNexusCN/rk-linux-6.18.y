@@ -10,6 +10,8 @@
 
 #include "rk3399-firefly-core-3399-jd4.dts"
 
+#include "rk3399-vpu.dtsi"
+
 &u2phy1_otg {
 	status = "okay";
 };

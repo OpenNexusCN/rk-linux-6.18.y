@@ -10,6 +10,8 @@
 
 #include "rk3399-sv-33a6x.dts"
 
+#include "rk3399-vpu.dtsi"
+
 &u2phy0_otg {
 	status = "okay";
 };

@@ -19,6 +19,8 @@
 
 #include "rk3399-bozz-sw799.dts"
 
+#include "rk3399-vpu.dtsi"
+
 &u2phy0_otg {
 	status = "okay";
 };

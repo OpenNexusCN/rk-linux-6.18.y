@@ -16,6 +16,8 @@
 
 #include "rk3399-nanopc-t4.dts"
 
+#include "rk3399-vpu.dtsi"
+
 &usbdrd_dwc3_0 {
 	dr_mode = "otg";
 	usb-role-switch;
