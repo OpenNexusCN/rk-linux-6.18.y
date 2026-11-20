@@ -21,6 +21,8 @@
 
 #include "rk3399-vpu.dtsi"
 
+#include "rk3399-iep.dtsi"
+
 &u2phy0_otg {
 	status = "okay";
 };

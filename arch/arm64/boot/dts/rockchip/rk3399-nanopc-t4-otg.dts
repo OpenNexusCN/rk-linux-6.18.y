@@ -18,6 +18,8 @@
 
 #include "rk3399-vpu.dtsi"
 
+#include "rk3399-iep.dtsi"
+
 &usbdrd_dwc3_0 {
 	dr_mode = "otg";
 	usb-role-switch;
