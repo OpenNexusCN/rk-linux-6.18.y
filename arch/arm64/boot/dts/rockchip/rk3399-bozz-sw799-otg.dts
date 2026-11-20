@@ -38,3 +38,26 @@
 	maximum-speed = "high-speed";
 	status = "okay";
 };
+
+/*
+ * The stock DTS leaves all VOPs disabled, so rockchip-drm never registers
+ * a display card.  MPP's DRM allocator then opens the panfrost card and
+ * fails with os_allocator_drm_alloc -1, crashing One-KVM during encoder
+ * probing.  Enable both VOPs and their IOMMUs so rockchip-drm becomes
+ * card0; no HDMI output is required for buffer allocation.
+ */
+&vopb {
+	status = "okay";
+};
+
+&vopb_mmu {
+	status = "okay";
+};
+
+&vopl {
+	status = "okay";
+};
+
+&vopl_mmu {
+	status = "okay";
+};
